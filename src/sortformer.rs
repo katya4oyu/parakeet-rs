@@ -715,6 +715,51 @@ impl Sortformer {
         Ok(all_segments)
     }
 
+    /// [`feed`](Self::feed) without binarization: buffers audio the same way and returns the
+    /// speaker probabilities of every chunk that was ready, `[frames, NUM_SPEAKERS]` at 10 ms,
+    /// in stream order (empty while still buffering).
+    pub fn feed_raw(&mut self, audio_16k_mono: &[f32]) -> Result<Array2<f32>> {
+        self.audio_buffer.extend_from_slice(audio_16k_mono);
+
+        let feed_size = (self.chunk_len + self.right_context) * SUBSAMPLING;
+        let stride_samples = self.chunk_len * SUBSAMPLING * HOP_LENGTH;
+        let feed_samples = (self.chunk_len + self.right_context) * SUBSAMPLING * HOP_LENGTH;
+
+        let mut all = Vec::new();
+        while self.audio_buffer.len() >= feed_samples {
+            let features = self.extract_mel_features(&self.audio_buffer[..feed_samples])?;
+            let chunk_feat = features.slice(s![.., ..feed_size, ..]).to_owned();
+            all.push(self.streaming_update(&chunk_feat, feed_size)?);
+            self.audio_buffer.drain(..stride_samples);
+            self.elapsed_samples += stride_samples;
+        }
+        Ok(Self::concat_predictions(&all))
+    }
+
+    /// [`flush`](Self::flush) without binarization: the probabilities of every remaining 10 ms
+    /// frame. Unlike `flush`, a remainder longer than one chunk is run as several chunks, so
+    /// the frames past the first chunk are not dropped.
+    pub fn flush_raw(&mut self) -> Result<Array2<f32>> {
+        let feed_size = (self.chunk_len + self.right_context) * SUBSAMPLING;
+        let stride_samples = self.chunk_len * SUBSAMPLING * HOP_LENGTH;
+        let feed_samples = feed_size * HOP_LENGTH;
+
+        let mut all = Vec::new();
+        while !self.audio_buffer.is_empty() {
+            let take = self.audio_buffer.len().min(feed_samples);
+            let features = self.extract_mel_features(&self.audio_buffer[..take])?;
+            let current_len = (take / HOP_LENGTH).max(1).min(features.shape()[1]);
+            let chunk_feat = self.pad_chunk(features.slice(s![.., ..current_len, ..]), feed_size);
+            let preds = self.streaming_update(&chunk_feat, current_len)?;
+            let step = take.min(stride_samples);
+            let frames = step.div_ceil(HOP_LENGTH).min(preds.nrows());
+            all.push(preds.slice(s![..frames, ..]).to_owned());
+            self.audio_buffer.drain(..step);
+            self.elapsed_samples += step;
+        }
+        Ok(Self::concat_predictions(&all))
+    }
+
     /// Flush remaining buffered audio at end of stream.
     ///
     /// processes any leftover audio in the buffer with zero paddings.
