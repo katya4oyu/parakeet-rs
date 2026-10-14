@@ -46,10 +46,12 @@ impl ParakeetTDTDecoder {
                     && !display_text.starts_with(' ')
                     && display_text.chars().all(|c| c.is_ascii_digit())
                 {
+                    // ASCII letters only: kanji and kana are alphabetic too, and Japanese has
+                    // no space before a number ("第16").
                     let trailing_letters: usize = full_text
                         .chars()
                         .rev()
-                        .take_while(|c| c.is_alphabetic())
+                        .take_while(|c| c.is_ascii_alphabetic())
                         .count();
                     let last_char = full_text.chars().last();
                     let is_article_a = trailing_letters == 1 && last_char == Some('a');

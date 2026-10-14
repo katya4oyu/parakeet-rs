@@ -180,6 +180,26 @@ impl ParakeetTDTModel {
         )))
     }
 
+    /// Mel bands the encoder takes (`audio_signal` is `[batch, features, time]`), when the graph
+    /// fixes it: 128 for parakeet-tdt-0.6b-v2/v3, 80 for parakeet-tdt_ctc-0.6b-ja.
+    pub fn feature_size(&self) -> Option<usize> {
+        match &self.encoder {
+            #[cfg(feature = "ort")]
+            Encoder::Ort(session) => {
+                let dim = *session
+                    .inputs()
+                    .iter()
+                    .find(|i| i.name() == "audio_signal")?
+                    .dtype()
+                    .tensor_shape()?
+                    .get(1)?;
+                (dim > 0).then_some(dim as usize)
+            }
+            #[cfg(feature = "burn")]
+            Encoder::Burn(_) => None,
+        }
+    }
+
     /// Run greedy decoding - returns (token_ids, frame_indices, durations)
     pub fn forward(
         &mut self,

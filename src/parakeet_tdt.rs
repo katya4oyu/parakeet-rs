@@ -75,8 +75,8 @@ impl ParakeetTDT {
             )));
         }
 
-        // TDT-specific preprocessor config (128 features instead of 80)
-        let preprocessor_config = PreprocessorConfig {
+        // TDT-specific preprocessor config: 128 features (v2/v3) unless the encoder says otherwise
+        let mut preprocessor_config = PreprocessorConfig {
             feature_extractor_type: "ParakeetFeatureExtractor".to_string(),
             feature_size: 128,
             hop_length: 160,
@@ -111,6 +111,9 @@ impl ParakeetTDT {
             joint_exec_config,
             vocab_size,
         )?;
+        if let Some(n) = model.feature_size() {
+            preprocessor_config.feature_size = n;
+        }
         let decoder = ParakeetTDTDecoder::from_vocab(vocab);
         let feature_cache = FeatureCache::from_config(&preprocessor_config);
 
