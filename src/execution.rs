@@ -124,6 +124,10 @@ pub struct ModelConfig {
     pub coreml_cache_dir: Option<PathBuf>,
     #[cfg(feature = "ort")]
     pub coreml_compute_units: CoreMLComputeUnits,
+    /// Hand CoreML an ML Program (Core ML 5+) instead of the default NeuralNetwork format.
+    /// ML Programs cover more operators.
+    #[cfg(feature = "ort")]
+    pub coreml_ml_program: bool,
     /// The ONNX Runtime environment sessions are created in. Required for ONNX Runtime
     /// providers; burn providers don't use it.
     #[cfg(feature = "ort")]
@@ -147,6 +151,7 @@ impl fmt::Debug for ModelConfig {
         )
         .field("coreml_cache_dir", &self.coreml_cache_dir)
         .field("coreml_compute_units", &self.coreml_compute_units)
+        .field("coreml_ml_program", &self.coreml_ml_program)
         .field("environment", &self.environment);
         s.finish()
     }
@@ -164,6 +169,8 @@ impl Default for ModelConfig {
             coreml_cache_dir: None,
             #[cfg(feature = "ort")]
             coreml_compute_units: CoreMLComputeUnits::default(),
+            #[cfg(feature = "ort")]
+            coreml_ml_program: false,
             #[cfg(feature = "ort")]
             environment: None,
         }
@@ -212,6 +219,13 @@ impl ModelConfig {
     #[cfg(feature = "ort")]
     pub fn with_coreml_compute_units(mut self, units: CoreMLComputeUnits) -> Self {
         self.coreml_compute_units = units;
+        self
+    }
+
+    /// Hand CoreML an ML Program instead of a NeuralNetwork (see [`Self::coreml_ml_program`]).
+    #[cfg(feature = "ort")]
+    pub fn with_coreml_ml_program(mut self, enable: bool) -> Self {
+        self.coreml_ml_program = enable;
         self
     }
     /// Create ONNX Runtime sessions in `environment`, from `parakeet_rs::ort::init().build()`.
@@ -287,6 +301,9 @@ impl ModelConfig {
                     CoreMLComputeUnits::CpuOnly => ComputeUnits::CPUOnly,
                 };
                 let mut coreml = CoreML::default().with_compute_units(units);
+                if self.coreml_ml_program {
+                    coreml = coreml.with_model_format(ort::ep::coreml::ModelFormat::MLProgram);
+                }
 
                 if let Some(cache_dir) = &self.coreml_cache_dir {
                     coreml = coreml.with_model_cache_dir(cache_dir.to_string_lossy());
